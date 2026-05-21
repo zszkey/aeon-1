@@ -62,9 +62,28 @@ Style rules:
 - If fewer than 3 candidates survive the why-now bar, allow **up to 1 background item** (tagged `background:` instead of `why now:`) so the brief still surfaces something worth knowing on quiet days. Never invent items, and never include more than 1 background item.
 - If soul files under `soul/` are populated, match that voice; otherwise keep it direct and neutral (per CLAUDE.md).
 
-### 4. Send via `./notify` and log
+### 4. Send via `./notify` and email
 
 - Send the formatted brief with `./notify "..."`.
+- Send email via Resend:
+  - Build the brief as HTML (wrap each section in `<h2>` headers, `<ul>/<li>` bullets)
+  - Also keep a plain-text copy (the `./notify` content above, as-is)
+  - Parse `$BRIEF_RECIPIENTS` as a comma-separated list of addresses
+  - POST to `https://api.resend.com/emails`:
+    ```
+    Authorization: Bearer $RESEND_API_KEY
+    Content-Type: application/json
+
+    {
+      "from": "Aeon Briefings <onboarding@resend.dev>",
+      "to": ["<each recipient>"],
+      "subject": "[Aeon] Morning Brief — ${today}",
+      "html": "<html version>",
+      "text": "<plain-text version>"
+    }
+    ```
+  - Log the `id` field from the Resend response as a comment on the current Paperclip execution issue for traceability
+  - If Resend returns an error, log the full error body as a comment and fail loudly (do not silently continue)
 - Append to `memory/logs/${today}.md` under a `### morning-brief` heading: timestamp, the 3 focus items (one line each), headline count, and any skills flagged from cron-state. This becomes tomorrow's "since yesterday" input.
 
 ## Sandbox note

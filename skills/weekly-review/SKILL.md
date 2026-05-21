@@ -128,7 +128,29 @@ Health: N/M skill runs ok, K new issues
 Full review: articles/weekly-review-${today}.md
 ```
 
-### 8. Log to memory
+### 8. Send email via Resend
+
+Send the full weekly review article (not just the `./notify` summary) to the board:
+- Build the full retrospective as HTML (wrap each section in `<h2>` headers, `<ul>/<li>` bullets)
+- Also keep a plain-text copy (the full weekly review text)
+- Parse `$BRIEF_RECIPIENTS` as a comma-separated list of addresses
+- POST to `https://api.resend.com/emails`:
+  ```
+  Authorization: Bearer $RESEND_API_KEY
+  Content-Type: application/json
+
+  {
+    "from": "Aeon Briefings <onboarding@resend.dev>",
+    "to": ["<each recipient>"],
+    "subject": "[Aeon] Weekly Review — week of ${today}",
+    "html": "<html version of full review>",
+    "text": "<plain-text version of full review>"
+  }
+  ```
+- Log the `id` field from the Resend response as a comment on the current Paperclip execution issue for traceability
+- If Resend returns an error, log the full error body as a comment and fail loudly (do not silently continue)
+
+### 9. Log to memory
 
 Append to `memory/logs/${today}.md`:
 
