@@ -38,6 +38,7 @@ skills:
 
   # --- Hound onchain investigation (on-demand; var = address / tx hash) ---
   rug-scan: { enabled: false, schedule: "workflow_dispatch", var: "" } # var: token address — rug-pull risk verdict
+  lp-lock-check: { enabled: false, schedule: "workflow_dispatch", var: "" } # var: token address — LP lock / rug-pull risk check
   contract-audit: { enabled: false, schedule: "workflow_dispatch", var: "" } # var: contract address — powers/ownership/proxy audit
   wallet-profile: { enabled: false, schedule: "workflow_dispatch", var: "" } # var: wallet address — behavioral profile
   deployer-trace: { enabled: false, schedule: "workflow_dispatch", var: "" } # var: deployer/token address — serial-rug detection

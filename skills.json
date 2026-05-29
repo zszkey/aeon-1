@@ -1,8 +1,8 @@
 {
     "version": "1.0",
-    "generated": "2026-05-29T15:40:00Z",
+    "generated": "2026-05-29T18:34:02Z",
     "repo": "aaronjmars/aeon",
-    "total": 171,
+    "total": 172,
     "categories": {
         "research": "Research & Content",
         "dev": "Dev & Code",
@@ -2062,6 +2062,18 @@
             "sha": "0000000",
             "updated": "2026-05-29",
             "install": "./add-skill aaronjmars/aeon fleet-scorecard"
+        },
+        {
+            "slug": "lp-lock-check",
+            "name": "LP Lock Check",
+            "description": "Resolve a token's main liquidity pool on Base and classify whether its LP is burned/locked or removable (rug-pull risk). Keyless \u2014 no explorer key needed.",
+            "category": "crypto",
+            "schedule": "workflow_dispatch",
+            "var": "",
+            "files": 0,
+            "sha": "",
+            "updated": "",
+            "install": "./add-skill aaronjmars/aeon lp-lock-check"
         }
     ],
     "install_all": "./add-skill aaronjmars/aeon --all",
