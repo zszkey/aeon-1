@@ -1,8 +1,8 @@
 {
     "version": "1.0",
-    "generated": "2026-05-29T15:40:00Z",
+    "generated": "2026-05-29T18:43:59Z",
     "repo": "aaronjmars/aeon",
-    "total": 171,
+    "total": 172,
     "categories": {
         "research": "Research & Content",
         "dev": "Dev & Code",
@@ -2062,6 +2062,18 @@
             "sha": "0000000",
             "updated": "2026-05-29",
             "install": "./add-skill aaronjmars/aeon fleet-scorecard"
+        },
+        {
+            "slug": "linked-wallets",
+            "name": "Linked Wallets",
+            "description": "Cluster addresses likely controlled by the same entity on Base via shared-funder and co-spend heuristics. Keyless \u2014 no explorer key needed.",
+            "category": "crypto",
+            "schedule": "workflow_dispatch",
+            "var": "",
+            "files": 0,
+            "sha": "",
+            "updated": "",
+            "install": "./add-skill aaronjmars/aeon linked-wallets"
         }
     ],
     "install_all": "./add-skill aaronjmars/aeon --all",
