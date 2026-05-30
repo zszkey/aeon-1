@@ -36,6 +36,7 @@ These are the projects we know of that run Aeon, extend it, or integrate with th
 | GitBounty | [@Gitlawbounty](https://x.com/Gitlawbounty) |
 | GitKernal | [@gitkernal](https://x.com/gitkernal) |
 | Gitlawb Terminal | [@Gitlawbterminal](https://x.com/Gitlawbterminal) |
+| Hound Flow | [@HoundFlow_](https://x.com/HoundFlow_) · [houndflow.com](https://houndflow.com) |
 | LawbWorld | [@LawbWorld](https://x.com/LawbWorld) |
 | LiquidPad | [@LiquidPadBot](https://x.com/LiquidPadBot) · [liquidpad.site](https://www.liquidpad.site) |
 | Liq | [@_proxystudio](https://x.com/_proxystudio) |
