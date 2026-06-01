@@ -1,4 +1,5 @@
 {
+  "_note": "Fork operators: this file advertises THIS repo's agent wallets to the x402books ecosystem. Replace the addresses below with your own fork's wallets, or delete this file entirely, before deploying. Pulling upstream as-is will misattribute your agent's activity to the aaronjmars/aeon treasury.",
   "agent": "AEON",
   "xHandle": "@aeonframework",
   "ecosystem": "Base",
