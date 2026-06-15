@@ -334,43 +334,41 @@ Variable: {var}
             print("\n  ... ({} chars total)".format(len(result)))
         print("-"*60 + "\n")
 
-    return output_file, result
+    return output_file, result, tool_calls_made, elapsed
 
 
 # ====== Self-Evolution Engine ======
 
 def score_output(content, tool_calls, duration):
-    """Rate an output 0-100: length, structure, data richness, efficiency."""
-    score = 50
+    """Rate an output 0-100: stricter calibration for meaningful improvement."""
+    score = 30
     text = content or ""
-    # Length: prefer 500-4000 chars
     l = len(text)
-    if l > 200:  score += 5
-    if l > 500:  score += 5
-    if l > 1000: score += 5
-    if l > 2000: score += 3
-    if l > 5000: score -= 5  # too verbose
-    if l < 100:  score -= 20  # near-empty
-    # Structure: headings, bullets, tables
-    if "## " in text or "### " in text:
-        score += 8
+    # Length: strict tiers
+    if l >= 5000:  score -= 10  # fluff
+    elif l >= 3000: score += 12
+    elif l >= 1500: score += 8
+    elif l >= 800:  score += 4
+    elif l >= 400:  score += 1
+    else:           score -= 25  # near-empty -> fail hard
+    # Structure
+    headings = text.count("## ")
+    score += min(headings * 3, 12)
     if "| " in text and " |" in text:
-        score += 5  # table
-    if "- " in text or "* " in text:
         score += 5
-    # Data density: URLs, numbers, sources
+    bullets = len(re.findall(r'^[*-] ', text, re.MULTILINE))
+    score += min(bullets, 8)
+    # Data: URLs, numbers
     urls = len(re.findall(r'https?://\S+', text))
-    numbers = len(re.findall(r'\d+', text))
-    score += min(urls * 3, 15)
-    score += min(numbers // 5, 5)
-    # Tool efficiency: good tool calls boost score
-    if tool_calls >= 3:  score += 5
-    if tool_calls >= 8:  score += 3
-    if tool_calls == 0:  score -= 10
-    # Duration: fast is good, but too fast means shallow
-    if 10 < duration < 120:  score += 3
-    if duration < 5 and not text:
-        score -= 15
+    score += min(urls * 3, 12) if urls >= 2 else (urls * 2)
+    numbers = len(re.findall(r'\d+\s*(%|USD|ETH|BTC|million|billion)', text))
+    score += min(numbers * 2, 6)
+    # Tool efficiency
+    if tool_calls >= 8:  score += 5
+    elif tool_calls >= 3: score += 3
+    elif tool_calls == 0: score -= 15
+    if duration < 5 and l < 200:
+        score -= 20
     return max(0, min(100, score))
 
 
@@ -479,8 +477,8 @@ def evolve_skill(skill_name):
 
     # Phase 1: Baseline
     print("\n[Phase 1] Running baseline...")
-    base_file, base_result = run_skill(skill_name, verbose=False)
-    base_score = score_output(base_result, 0, 60)
+    base_file, base_result, base_tools, base_dur = run_skill(skill_name, verbose=False)
+    base_score = score_output(base_result, base_tools, base_dur)
     print("  Baseline score: {}/100".format(base_score))
 
     # Phase 2: Generate improved prompt
@@ -503,8 +501,8 @@ def evolve_skill(skill_name):
 
     # Phase 4: Run improved version
     print("\n[Phase 4] Running improved version...")
-    improved_file, improved_result = run_skill(skill_name, verbose=False)
-    improved_score = score_output(improved_result, 0, 60)
+    improved_file, improved_result, impr_tools, impr_dur = run_skill(skill_name, verbose=False)
+    improved_score = score_output(improved_result, impr_tools, impr_dur)
     print("  Improved score: {}/100".format(improved_score))
 
     # Phase 5: Compare and decide
