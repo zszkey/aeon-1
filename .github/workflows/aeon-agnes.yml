@@ -1,5 +1,4 @@
-name: Aeon (Agnes) ✅
-run-name: "skill: ${{ inputs.skill }}${{ inputs.var && format(' ({0})', inputs.var) || '' }}"
+﻿name: Aeon (Agnes) 鉁?run-name: "skill: ${{ inputs.skill }}${{ inputs.var && format(' ({0})', inputs.var) || '' }}"
 
 on:
   workflow_dispatch:
@@ -28,7 +27,7 @@ on:
         required: false
         type: string
   schedule:
-    - cron: '0 */6 * * *'   # Every 6 hours — heartbeat pulse
+    - cron: '0 */6 * * *'   # Every 6 hours 鈥?heartbeat pulse
 
 permissions:
   contents: write
@@ -199,7 +198,7 @@ with open('$HEALTH_FILE', 'w') as f:
               echo "No changes to commit or push"
               exit 0
             fi
-            echo "Unpushed commits — pushing"
+            echo "Unpushed commits 鈥?pushing"
           else
             git commit -m "chore(${{ steps.skill.outputs.name }}): auto-commit $(date +%Y-%m-%d)"
           fi
