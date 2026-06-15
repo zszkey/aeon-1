@@ -1,312 +1,51 @@
-﻿name: Aeon (Agnes) 鉁?run-name: "skill: ${{ inputs.skill }}${{ inputs.var && format(' ({0})', inputs.var) || '' }}"
+﻿name: Aeon Agnes
 
 on:
   workflow_dispatch:
     inputs:
       skill:
-        description: 'Skill name (must match a directory under skills/)'
+        description: 'Skill name'
         required: true
         type: string
       var:
-        description: 'Variable (e.g. AI, bitcoin, owner/repo)'
+        description: 'Variable'
         required: false
         type: string
-      chain_context_file:
-        description: 'Chain context file path'
-        required: false
-        type: string
-  workflow_call:
-    inputs:
-      skill:
-        required: true
-        type: string
-      var:
-        required: false
-        type: string
-      chain_context_file:
-        required: false
-        type: string
-  schedule:
-    - cron: '0 */6 * * *'   # Every 6 hours 鈥?heartbeat pulse
 
 permissions:
   contents: write
-  pull-requests: write
-  issues: read
-  actions: read
-
-concurrency:
-  group: aeon-agnes-${{ inputs.skill || github.run_id }}
-  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
-      - name: Determine skill
-        id: skill
-        run: |
-          SKILL="${{ inputs.skill }}"
-          if [ -z "$SKILL" ]; then
-            # Scheduled runs: pick a random enabled skill or default to heartbeat
-            echo "name=heartbeat" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=$SKILL" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: actions/checkout@v5
 
-      - name: Checkout repo
-        uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.GH_GLOBAL || secrets.GITHUB_TOKEN }}
-
-      - name: Configure git
-        run: |
-          git config user.name "aeonframework"
-          git config user.email "aeonframework@proton.me"
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Run skill with Agnes
-        id: run
         env:
-          AGNES_API_KEY: *** secrets.AGNES_API_KEY }}
-          SKILL: ${{ steps.skill.outputs.name }}
-          SKILL_VAR: ${{ inputs.var }}
+          AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
         run: |
-          echo "=== Running skill: $SKILL ==="
-          echo "=== Var: ${SKILL_VAR:-none} ==="
-
-          TODAY=$(date -u +%Y-%m-%d)
+          echo "=== Skill: ${{ inputs.skill }} ==="
           mkdir -p memory/logs outputs .outputs
-
-          # Run the skill
-          if [ -n "$SKILL_VAR" ]; then
-            python aeon_runner.py run "$SKILL" --var "$SKILL_VAR"
-          else
-            python aeon_runner.py run "$SKILL"
-          fi
-
-          echo "=== Skill completed ==="
-
-          # Capture output for downstream steps
-          OUTPUT_FILE="outputs/${SKILL}_${TODAY}.md"
-          if [ -f "$OUTPUT_FILE" ]; then
-            cp "$OUTPUT_FILE" ".outputs/${SKILL}.md"
-            echo "OUTPUT_BYTES=$(wc -c < "$OUTPUT_FILE")" >> "$GITHUB_OUTPUT"
-          else
-            echo "No output file found"
-            echo "OUTPUT_BYTES=0" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Analyze skill output
-        id: analyze
-        if: always() && steps.run.outcome == 'success'
-        env:
-          AGNES_API_KEY: *** secrets.AGNES_API_KEY }}
-          SKILL: ${{ steps.skill.outputs.name }}
-        run: |
-          OUTPUT_FILE="outputs/${SKILL}_$(date -u +%Y-%m-%d).md"
-          if [ ! -f "$OUTPUT_FILE" ] || [ ! -s "$OUTPUT_FILE" ]; then
-            echo "No output to analyze"
-            echo "QUALITY_SCORE=0" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          OUTPUT=$(head -c 3000 "$OUTPUT_FILE")
-
-          # Ask Agnes to score the output
-          SCORE_JSON=$(python -c "
-import urllib.request, json, os
-body = json.dumps({
-    'model': 'agnes-2.0-flash',
-    'messages': [
-        {'role': 'system', 'content': 'Score agent output 1-5. Respond ONLY with JSON: {\"score\":N, \"assessment\":\"one line\", \"flags\":[]}. Flag: api_error, empty_output, low_quality, stale_data, generic_content.'},
-        {'role': 'user', 'content': f'Skill: ${SKILL}\nOutput:\n${OUTPUT}\n\nScore it.'}
-    ],
-    'max_tokens': 200, 'temperature': 0
-}).encode()
-req = urllib.request.Request(
-    'https://apihub.agnes-ai.com/v1/chat/completions',
-    data=body,
-    headers={'Content-Type':'application/json', 'Authorization': '***' + os.environ['AGNES_API_KEY']}
-)
-resp = urllib.request.urlopen(req, timeout=30)
-data = json.loads(resp.read())
-print(data['choices'][0]['message']['content'])
-" 2>/dev/null || echo '{"score":3,"assessment":"analysis skipped","flags":[]}')
-
-          SCORE=$(echo "$SCORE_JSON" | python -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get('score',0))" 2>/dev/null || echo "3")
-          echo "QUALITY_SCORE=$SCORE" >> "$GITHUB_OUTPUT"
-
-          # Write skill health
-          mkdir -p memory/skill-health
-          HEALTH_FILE="memory/skill-health/${SKILL}.json"
-          NOW_ISO=$(date -u +%FT%TZ)
-
-          if [ -f "$HEALTH_FILE" ]; then
-            HISTORY=$(python -c "import json; d=json.load(open('$HEALTH_FILE')); print(json.dumps(d.get('history',[])))")
-          else
-            HISTORY='[]'
-          fi
-          TODAY=$(date -u +%Y-%m-%d)
-          HISTORY=$(echo "$HISTORY" | python -c "
-import json, sys
-h = json.loads(sys.stdin.read())
-h.append({'date': '$TODAY', 'score': $SCORE})
-h = h[-30:]
-print(json.dumps(h))
-")
-          AVG=$(echo "$HISTORY" | python -c "import json,sys; h=json.loads(sys.stdin.read()); s=[x['score'] for x in h]; print(round(sum(s)/len(s),2))")
-
-          python -c "
-import json
-with open('$HEALTH_FILE', 'w') as f:
-    json.dump({
-        'skill': '${SKILL}',
-        'last_analyzed': '$NOW_ISO',
-        'quality_score': $SCORE,
-        'avg_score': $AVG,
-        'history': json.loads('$HISTORY')
-    }, f, indent=2)
-"
-
-          echo "Skill quality: $SKILL score=$SCORE avg=$AVG"
+          python aeon_runner.py run "${{ inputs.skill }}" ${{ inputs.var && format('--var "{0}"', inputs.var) || '' }}
 
       - name: Commit results
-        if: always()
         run: |
-          CURRENT_BRANCH=$(git branch --show-current)
-
-          # If on a feature branch, push it and switch back
-          if [ "$CURRENT_BRANCH" != "main" ] && [ -n "$CURRENT_BRANCH" ]; then
-            git add -A
-            git diff --staged --quiet || git commit -m "chore(${{ steps.skill.outputs.name }}): auto-commit $(date +%Y-%m-%d)"
-            git push --force-with-lease -u origin "$CURRENT_BRANCH" || true
-            git checkout main
-            git pull --rebase origin main || true
-          fi
-
-          # Commit results on main
+          git config user.name "aeonframework"
+          git config user.email "aeonframework@proton.me"
           git add -A
           if git diff --staged --quiet; then
-            if [ "$(git rev-list origin/main..HEAD --count 2>/dev/null)" = "0" ]; then
-              echo "No changes to commit or push"
-              exit 0
-            fi
-            echo "Unpushed commits 鈥?pushing"
-          else
-            git commit -m "chore(${{ steps.skill.outputs.name }}): auto-commit $(date +%Y-%m-%d)"
-          fi
-
-          for i in 1 2 3 4 5; do
-            git pull --rebase origin main 2>/dev/null || true
-            if git push -u origin HEAD 2>/dev/null; then
-              echo "Pushed on attempt $i"
-              exit 0
-            fi
-            echo "Push attempt $i failed, retrying..."
-            sleep "$i"
-          done
-          echo "Push failed after 5 attempts"
-
-      - name: Update cron state
-        if: always() && steps.skill.outputs.name != ''
-        run: |
-          SKILL="${{ steps.skill.outputs.name }}"
-          RUN_OUTCOME="${{ steps.run.outcome }}"
-          NOW_ISO=$(date -u +%FT%TZ)
-          STATE_FILE="memory/cron-state.json"
-          QUALITY_SCORE="${{ steps.analyze.outputs.QUALITY_SCORE }}"
-
-          if [ "$RUN_OUTCOME" = "success" ]; then
-            CRON_STATUS="success"
-          else
-            CRON_STATUS="failed"
-          fi
-
-          git checkout main 2>/dev/null || true
-          git pull --rebase origin main 2>/dev/null || true
-
-          if [ -f "$STATE_FILE" ]; then
-            STATE=$(cat "$STATE_FILE")
-          else
-            STATE='{}'
-          fi
-
-          STATE=$(echo "$STATE" | python -c "
-import json, sys
-state = json.load(sys.stdin)
-s = '$SKILL'
-st = '$CRON_STATUS'
-ts = '$NOW_ISO'
-qs = '$QUALITY_SCORE'
-
-entry = state.get(s, {})
-entry['last_status'] = st
-entry['last_' + st] = ts
-entry['total_runs'] = entry.get('total_runs', 0) + 1
-
-if st == 'success':
-    entry['total_successes'] = entry.get('total_successes', 0) + 1
-    entry['consecutive_failures'] = 0
-else:
-    entry['total_failures'] = entry.get('total_failures', 0) + 1
-    entry['consecutive_failures'] = entry.get('consecutive_failures', 0) + 1
-
-total = entry['total_runs']
-succ = entry.get('total_successes', 0)
-entry['success_rate'] = round(succ / total, 2) if total > 0 else 0
-
-if qs and qs != '0':
-    entry['last_quality_score'] = int(qs)
-
-state[s] = entry
-print(json.dumps(state, indent=2))
-")
-
-          mkdir -p memory
-          echo "$STATE" > "$STATE_FILE"
-
-          git add "$STATE_FILE"
-          if git diff --staged --quiet; then
-            echo "No state changes"
+            echo "No changes"
             exit 0
           fi
-
-          git commit -m "chore(cron): $SKILL $CRON_STATUS"
+          git commit -m "chore(${{ inputs.skill }}): auto-commit $(date +%Y-%m-%d)"
           for i in 1 2 3 4 5; do
-            git pull --rebase origin main 2>/dev/null && git push -u origin HEAD 2>/dev/null && { echo "Cron state updated: $SKILL=$CRON_STATUS"; exit 0; }
-            git rebase --abort 2>/dev/null || true
-            git reset --soft HEAD~1 2>/dev/null || true
-            git checkout -- "$STATE_FILE" 2>/dev/null || true
-            git pull origin main 2>/dev/null || true
-
-            if [ -f "$STATE_FILE" ]; then
-              STATE=$(cat "$STATE_FILE")
-            else
-              STATE='{}'
-            fi
-            STATE=$(echo "$STATE" | python -c "
-import json, sys
-state = json.load(sys.stdin)
-s = '$SKILL'
-st = '$CRON_STATUS'
-ts = '$NOW_ISO'
-entry = state.get(s, {})
-entry['last_status'] = st
-entry['last_' + st] = ts
-state[s] = entry
-print(json.dumps(state, indent=2))
-")
-            echo "$STATE" > "$STATE_FILE"
-            git add "$STATE_FILE"
-            git diff --staged --quiet && { echo "State already up to date"; exit 0; }
-            git commit -m "chore(cron): $SKILL $CRON_STATUS"
+            git pull --rebase origin main 2>/dev/null || true
+            git push -u origin HEAD 2>/dev/null && exit 0
             sleep "$i"
           done
-          echo "Cron state commit failed (non-fatal)"
