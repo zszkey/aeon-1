@@ -1,0 +1,61 @@
+name: Aeon Evolution
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  evolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Seed - run diverse skills
+        env:
+          AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
+        run: |
+          echo "=== Phase 0: Seeding outputs ==="
+          mkdir -p memory/logs outputs .outputs .evolve_backups
+          for skill in competitor-radar deal-flow changelog code-health contributor-leaderboard; do
+            echo "  Running: $skill"
+            python aeon_runner.py run "$skill" || echo "  [WARN] $skill failed, continuing"
+          done
+          echo "=== Seed phase done ==="
+
+      - name: Auto-Evolve
+        env:
+          AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
+        run: |
+          echo "=== Phase 1: Auto-Evolution ==="
+          python aeon_runner.py auto-evolve
+          echo "=== Evolution done ==="
+
+      - name: Score Report
+        env:
+          AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
+        run: |
+          echo "=== Final Score Report ==="
+          python aeon_runner.py score
+
+      - name: Commit results
+        run: |
+          git config user.name "aeonframework"
+          git config user.email "aeonframework@proton.me"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "evolve: auto-evolution run $(date +%Y-%m-%d)"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main 2>/dev/null || true
+            git push -u origin HEAD 2>/dev/null && exit 0
+            sleep "$i"
+          done
