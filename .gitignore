@@ -49,3 +49,5 @@ node_modules/
 # Stale artifacts
 .external-work
 .vuln-scan/
+
+aeon_config.json
