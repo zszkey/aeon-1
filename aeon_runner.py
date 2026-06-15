@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env python3
 """
-Aeon Runner v3 鈥?Agnes AI + 197 skills
+Aeon Runner v3 闁?Agnes AI + 197 skills
 Pure Python, zero framework deps.
 
 Usage:
@@ -8,7 +8,7 @@ Usage:
   python aeon_runner.py list
 """
 
-import os, sys, json, re, time, datetime, urllib.request, urllib.error, urllib.parse
+import os, sys, json, re, time, datetime, glob, urllib.request, urllib.error, urllib.parse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILLS_DIR = os.path.join(SCRIPT_DIR, "skills")
@@ -23,6 +23,9 @@ AGNES_MODEL = "agnes-2.0-flash"
 MAX_TOOL_TURNS = 8
 FETCH_TIMEOUT = 20
 TOOL_RESULT_MAX_CHARS = 1000
+EVOLVE_MAX_ATTEMPTS = 3
+EVOLVE_MIN_IMPROVEMENT = 0.15
+BACKUP_DIR = os.path.join(SCRIPT_DIR, ".evolve_backups")
 
 
 def load_config():
@@ -216,7 +219,7 @@ def run_skill(skill_name, var="", verbose=True):
     raw_prompt = extract_skill_prompt(skill_md, var)
     memory_ctx = read_memory()
 
-    system_prompt = """You are Aeon 鈥?an autonomous AI agent. Execute the skill using REAL, CURRENT data from tools.
+    system_prompt = """You are Aeon 闁?an autonomous AI agent. Execute the skill using REAL, CURRENT data from tools.
 
 Skill: {skill}
 Date: {date}
@@ -229,7 +232,7 @@ Variable: {var}
 {raw}
 
 ## Rules
-- Use web_fetch / web_search for ALL data 鈥?never guess
+- Use web_fetch / web_search for ALL data 闁?never guess
 - Batch requests per turn. Stop fetching once you have enough
 - Output CLEAN Markdown: ## sections, tables, bullet points
 - End with ## Sources listing fetched URLs
@@ -304,7 +307,7 @@ Variable: {var}
     # Save output
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
     output_file = os.path.join(OUTPUT_DIR, "{}_{}.md".format(skill_name, date_str))
-    header = "# {} 鈥?{}\n\n> Generated {}\n> Model: {} | Time: {:.1f}s | Tool calls: {} | Var: {}\n\n---\n\n".format(
+    header = "# {} 闁?{}\n\n> Generated {}\n> Model: {} | Time: {:.1f}s | Tool calls: {} | Var: {}\n\n---\n\n".format(
         skill_name, date_str,
         datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         AGNES_MODEL, elapsed, tool_calls_made,
@@ -323,7 +326,7 @@ Variable: {var}
         ))
 
     if verbose:
-        print("\n  [OK] Done in {:.1f}s 鈥?{} tool calls".format(elapsed, tool_calls_made))
+        print("\n  [OK] Done in {:.1f}s 闁?{} tool calls".format(elapsed, tool_calls_made))
         print("  [SAVE] {}".format(output_file))
         print("\n" + "-"*60)
         print(result[:1200])
@@ -332,6 +335,261 @@ Variable: {var}
         print("-"*60 + "\n")
 
     return output_file, result
+
+
+# ====== Self-Evolution Engine ======
+
+def score_output(content, tool_calls, duration):
+    """Rate an output 0-100: length, structure, data richness, efficiency."""
+    score = 50
+    text = content or ""
+    # Length: prefer 500-4000 chars
+    l = len(text)
+    if l > 200:  score += 5
+    if l > 500:  score += 5
+    if l > 1000: score += 5
+    if l > 2000: score += 3
+    if l > 5000: score -= 5  # too verbose
+    if l < 100:  score -= 20  # near-empty
+    # Structure: headings, bullets, tables
+    if "## " in text or "### " in text:
+        score += 8
+    if "| " in text and " |" in text:
+        score += 5  # table
+    if "- " in text or "* " in text:
+        score += 5
+    # Data density: URLs, numbers, sources
+    urls = len(re.findall(r'https?://\S+', text))
+    numbers = len(re.findall(r'\d+', text))
+    score += min(urls * 3, 15)
+    score += min(numbers // 5, 5)
+    # Tool efficiency: good tool calls boost score
+    if tool_calls >= 3:  score += 5
+    if tool_calls >= 8:  score += 3
+    if tool_calls == 0:  score -= 10
+    # Duration: fast is good, but too fast means shallow
+    if 10 < duration < 120:  score += 3
+    if duration < 5 and not text:
+        score -= 15
+    return max(0, min(100, score))
+
+
+def find_weakest_skill():
+    """Scan outputs/ to find the skill with the lowest-quality recent run."""
+    ensure_dirs()
+    files = sorted(glob.glob(os.path.join(OUTPUT_DIR, "*_*.md")), key=os.path.getmtime)
+    if not files:
+        print("  No output files to analyze. Run some skills first.")
+        return None, None
+    # Group latest per skill
+    latest = {}
+    for f in files:
+        name = os.path.basename(f)
+        # Format: skillname_YYYY-MM-DD.md
+        parts = name.rsplit("_", 1)
+        skill = parts[0] if len(parts) == 2 else name.replace(".md", "")
+        latest[skill] = f
+    scored = []
+    for skill, path in latest.items():
+        try:
+            with open(path, "r", encoding="utf-8") as fp:
+                content = fp.read()
+            # Extract metadata from header line
+            tc_match = re.search(r'Tool calls: (\d+)', content)
+            dur_match = re.search(r'Time: ([\d.]+)s', content)
+            tools = int(tc_match.group(1)) if tc_match else 0
+            dur = float(dur_match.group(1)) if dur_match else 60
+            # Strip header for content scoring
+            body = content.split("---\n", 2)[-1] if "---\n" in content else content
+            s = score_output(body, tools, dur)
+            scored.append((s, skill, path))
+            print("  Score {:3d} | {}".format(s, skill))
+        except Exception as e:
+            print("  Skip {}: {}".format(skill, e))
+    if not scored:
+        return None, None
+    scored.sort()
+    weakest = scored[0]
+    print("\n  Weakest: {} (score {})\n".format(weakest[1], weakest[0]))
+    return weakest[1], weakest[2]
+
+
+def generate_improved_prompt(original_md_path, api_key):
+    """Ask Agnes: analyze this skill and suggest a better version."""
+    with open(original_md_path, "r", encoding="utf-8") as f:
+        original = f.read()
+    skill_name = os.path.basename(os.path.dirname(original_md_path))
+    # Read recent output for context
+    out_files = sorted(glob.glob(os.path.join(OUTPUT_DIR, "{}_*.md".format(skill_name))), key=os.path.getmtime)
+    recent_output = ""
+    if out_files:
+        with open(out_files[-1], "r", encoding="utf-8") as f:
+            recent_output = f.read()[:3000]
+    prompt = """You are a skill optimizer. Analyze this skill and its recent output, then produce an IMPROVED version.
+
+## Original Skill (SKILL.md)
+```
+{original}
+```
+
+## Recent Output
+```
+{recent}
+```
+
+## Your Task
+1. Identify 2-3 weaknesses in the current skill (vague instructions, bad data sources, poor structure)
+2. Rewrite the SKILL.md to fix them. Follow these rules:
+   - Keep frontmatter (--- blocks) identical
+   - Make instructions MORE SPECIFIC: name exact URLs/APIs to use
+   - Demand concrete output format: tables, named sections, numbers
+   - Add fallback: what to do if APIs fail
+   - NO GitHub-specific commands (gh, ./notify)
+   - Output only the rewritten SKILL.md, nothing else
+
+## Rewritten SKILL.md:""".format(original=original, recent=recent_output[:2000] if recent_output else "(no recent output)")
+    messages = [
+        {"role": "system", "content": "You rewrite skill prompts to be more specific and effective. Output only the new SKILL.md."},
+        {"role": "user", "content": prompt}
+    ]
+    resp = call_agnes(messages, api_key, tools=None)
+    improved = resp["choices"][0]["message"].get("content", "")
+    # Clean: strip markdown code fences if present
+    improved = re.sub(r'^```\w*\n?', '', improved.strip())
+    improved = re.sub(r'\n?```$', '', improved)
+    return improved.strip()
+
+
+def evolve_skill(skill_name):
+    """Self-evolve one skill: analyze, improve, A/B test, keep winner."""
+    api_key = get_api_key()
+    if not api_key:
+        raise RuntimeError("No API key")
+    ensure_dirs()
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    skill_dir = os.path.join(SKILLS_DIR, skill_name)
+    skill_md = os.path.join(skill_dir, "SKILL.md")
+    if not os.path.exists(skill_md):
+        print("Skill '{}' not found.".format(skill_name))
+        return
+
+    print("=" * 60)
+    print("  AEON Self-Evolution  |  Target: {}".format(skill_name))
+    print("=" * 60)
+
+    # Phase 1: Baseline
+    print("\n[Phase 1] Running baseline...")
+    base_file, base_result = run_skill(skill_name, verbose=False)
+    base_score = score_output(base_result, 0, 60)
+    print("  Baseline score: {}/100".format(base_score))
+
+    # Phase 2: Generate improved prompt
+    print("\n[Phase 2] Generating improved version...")
+    improved_prompt = generate_improved_prompt(skill_md, api_key)
+    if len(improved_prompt) < 50:
+        print("  Failed to generate meaningful improvement. Aborting.")
+        return
+    print("  Improved prompt: {} chars".format(len(improved_prompt)))
+
+    # Phase 3: Backup original, write improved
+    backup_path = os.path.join(BACKUP_DIR, "{}_{}.bak".format(skill_name, datetime.datetime.now().strftime('%Y%m%d_%H%M%S')))
+    with open(skill_md, "r", encoding="utf-8") as f:
+        original_content = f.read()
+    with open(backup_path, "w", encoding="utf-8") as f:
+        f.write(original_content)
+    with open(skill_md, "w", encoding="utf-8") as f:
+        f.write(improved_prompt)
+    print("  Backup saved to {}".format(backup_path))
+
+    # Phase 4: Run improved version
+    print("\n[Phase 4] Running improved version...")
+    improved_file, improved_result = run_skill(skill_name, verbose=False)
+    improved_score = score_output(improved_result, 0, 60)
+    print("  Improved score: {}/100".format(improved_score))
+
+    # Phase 5: Compare and decide
+    print("\n[Phase 5] A/B Comparison:")
+    print("  Baseline : {:3d}/100  ({})".format(base_score, base_file))
+    print("  Improved : {:3d}/100  ({})".format(improved_score, improved_file))
+    delta = improved_score - base_score
+    print("  Delta    : {:+d}".format(delta))
+
+    if delta >= EVOLVE_MIN_IMPROVEMENT * 100:
+        print("\n  >>> KEEPING improved version (+{} points)".format(delta))
+        print("  >>> Backup at {}".format(backup_path))
+        result = "kept_improved"
+    elif delta > 0:
+        print("\n  >>> Marginal improvement (+{}), keeping anyway".format(delta))
+        result = "kept_improved"
+    else:
+        print("\n  >>> REVERTING to original (delta: {})".format(delta))
+        with open(skill_md, "w", encoding="utf-8") as f:
+            f.write(original_content)
+        os.remove(backup_path)
+        result = "reverted"
+
+    # Log evolution
+    log_file = os.path.join(LOGS_DIR, "{}.md".format(datetime.datetime.now().strftime('%Y-%m-%d')))
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write("\n### evolve:{}\n- Result: {}\n- Baseline: {} -> Improved: {}\n- Delta: {:+d}\n".format(
+            skill_name, result, base_score, improved_score, delta))
+    print("\n  Evolution complete. Result: {}".format(result))
+
+
+def evolve_loop(max_skills=3):
+    """Auto-evolve: find weakest skills, try to improve each."""
+    print("\n" + "=" * 60)
+    print("  AEON Self-Evolution Loop")
+    print("  Max skills: {} | Min improvement: {:.0%}".format(max_skills, EVOLVE_MIN_IMPROVEMENT))
+    print("=" * 60)
+
+    # Collect all skills with outputs
+    ensure_dirs()
+    out_files = sorted(glob.glob(os.path.join(OUTPUT_DIR, "*_*.md")), key=os.path.getmtime)
+    latest = {}
+    for f in out_files:
+        name = os.path.basename(f)
+        parts = name.rsplit("_", 1)
+        skill = parts[0] if len(parts) == 2 else name.replace(".md", "")
+        latest[skill] = f
+    if not latest:
+        print("No outputs to analyze. Run at least one skill first.")
+        return
+
+    # Score all
+    scored = []
+    print("\nScoring {} skills with outputs:\n".format(len(latest)))
+    for skill, path in latest.items():
+        try:
+            with open(path, "r", encoding="utf-8") as fp:
+                content = fp.read()
+            tc_match = re.search(r'Tool calls: (\d+)', content)
+            dur_match = re.search(r'Time: ([\d.]+)s', content)
+            tools = int(tc_match.group(1)) if tc_match else 0
+            dur = float(dur_match.group(1)) if dur_match else 60
+            body = content.split("---\n", 2)[-1] if "---\n" in content else content
+            s = score_output(body, tools, dur)
+            scored.append((s, skill, path))
+            print("  {:3d}  {}".format(s, skill))
+        except Exception as e:
+            print("  ERR  {}: {}".format(skill, e))
+
+    scored.sort()
+    improved_count = 0
+    for score, skill, path in scored[:max_skills]:
+        if score >= 70:
+            print("\n  Skill '{}' already good ({}). Skipping.".format(skill, score))
+            continue
+        print("\n--- Evolving {} (score: {}) ---".format(skill, score))
+        try:
+            evolve_skill(skill)
+            improved_count += 1
+        except Exception as e:
+            print("  Evolve failed: {}".format(e))
+
+    print("\n" + "=" * 60)
+    print("  Evolution loop done. Improved {} skills.".format(improved_count))
+    print("=" * 60)
 
 
 def list_skills():
@@ -362,11 +620,23 @@ def main():
         print("AEON Runner v3")
         print("  python aeon_runner.py run <skill> [--var VAL]")
         print("  python aeon_runner.py list")
+        print("  python aeon_runner.py evolve <skill>")
+        print("  python aeon_runner.py auto-evolve")
+        print("  python aeon_runner.py score")
         sys.exit(0)
 
     cmd = sys.argv[1]
     if cmd == "list":
         list_skills()
+    elif cmd == "score":
+        find_weakest_skill()
+    elif cmd == "evolve":
+        if len(sys.argv) < 3:
+            print("Usage: python aeon_runner.py evolve <skill>")
+            sys.exit(1)
+        evolve_skill(sys.argv[2])
+    elif cmd == "auto-evolve":
+        evolve_loop()
     elif cmd == "run":
         if len(sys.argv) < 3:
             print("Usage: python aeon_runner.py run <skill> [--var VAL]")
