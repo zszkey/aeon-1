@@ -1,4 +1,4 @@
-name: Aeon (Agnes)
+name: Aeon (Agnes) ✅
 run-name: "skill: ${{ inputs.skill }}${{ inputs.var && format(' ({0})', inputs.var) || '' }}"
 
 on:
