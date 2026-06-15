@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-Aeon Runner v3 — Agnes AI + 197 skills
+Aeon Runner v3 鈥?Agnes AI + 197 skills
 Pure Python, zero framework deps.
 
 Usage:
@@ -37,8 +37,9 @@ def load_config():
 def get_api_key():
     cfg = load_config()
     if cfg.get("api_key"):
-        return cfg["api_key"]
-    return os.environ.get("AGNES_API_KEY", "") or os.environ.get("AEON_API_KEY", "")
+        return cfg["api_key"].strip()
+    val = os.environ.get("AGNES_API_KEY", "") or os.environ.get("AEON_API_KEY", "")
+    return val.strip()
 
 
 def ensure_dirs():
@@ -215,7 +216,7 @@ def run_skill(skill_name, var="", verbose=True):
     raw_prompt = extract_skill_prompt(skill_md, var)
     memory_ctx = read_memory()
 
-    system_prompt = """You are Aeon — an autonomous AI agent. Execute the skill using REAL, CURRENT data from tools.
+    system_prompt = """You are Aeon 鈥?an autonomous AI agent. Execute the skill using REAL, CURRENT data from tools.
 
 Skill: {skill}
 Date: {date}
@@ -228,7 +229,7 @@ Variable: {var}
 {raw}
 
 ## Rules
-- Use web_fetch / web_search for ALL data — never guess
+- Use web_fetch / web_search for ALL data 鈥?never guess
 - Batch requests per turn. Stop fetching once you have enough
 - Output CLEAN Markdown: ## sections, tables, bullet points
 - End with ## Sources listing fetched URLs
@@ -303,7 +304,7 @@ Variable: {var}
     # Save output
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
     output_file = os.path.join(OUTPUT_DIR, "{}_{}.md".format(skill_name, date_str))
-    header = "# {} — {}\n\n> Generated {}\n> Model: {} | Time: {:.1f}s | Tool calls: {} | Var: {}\n\n---\n\n".format(
+    header = "# {} 鈥?{}\n\n> Generated {}\n> Model: {} | Time: {:.1f}s | Tool calls: {} | Var: {}\n\n---\n\n".format(
         skill_name, date_str,
         datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         AGNES_MODEL, elapsed, tool_calls_made,
@@ -322,7 +323,7 @@ Variable: {var}
         ))
 
     if verbose:
-        print("\n  [OK] Done in {:.1f}s — {} tool calls".format(elapsed, tool_calls_made))
+        print("\n  [OK] Done in {:.1f}s 鈥?{} tool calls".format(elapsed, tool_calls_made))
         print("  [SAVE] {}".format(output_file))
         print("\n" + "-"*60)
         print(result[:1200])
