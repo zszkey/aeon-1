@@ -31,7 +31,7 @@ BACKUP_DIR = os.path.join(SCRIPT_DIR, ".evolve_backups")
 def load_config():
     cfg = {}
     if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        with open(CONFIG_FILE, "r", encoding="utf-8-sig") as f:
             cfg = json.load(f)
     cfg.setdefault("model", AGNES_MODEL)
     return cfg
